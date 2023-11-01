@@ -15,6 +15,7 @@ type Nameserver struct {
 	cfg    *Config
 	serial uint32
 	txt    map[string]TXTField
+	mx     map[string]MXField
 }
 
 type TXTField struct {
@@ -23,12 +24,30 @@ type TXTField struct {
 	ttl   int
 }
 
+type MXField struct {
+	fqdn		string
+	value		string
+	preference	int
+	ttl		int
+}
+
 func NewNameserver(cfg *Config) (*Nameserver, error) {
 	n := &Nameserver{
 		serial: uint32(time.Now().Unix()),
 		cfg:    cfg,
 	}
 	n.txt = make(map[string]TXTField)
+	n.mx = make(map[string]MXField)
+
+	// Add MX record below
+	// e.g., 
+	// n.AddMX("example.com.", "mxa.mailgun.org.", 10, 60)
+
+	// Add TXT record below
+	// such as DMARC, SPF records
+	// n.AddTXT("example.com.", "v=spf1 include:mailgun.org ~all", 60)
+	// n.AddTXT("_dmarc.example.com.", "v=DMARC1; p=none", 60)
+        // n.AddTXT("smtp._domainkey.example.com.", "k=rsa; p=MIIBIjA[..snip..]QIDAQAB", 60)
 
 	n.Reset()
 
@@ -55,6 +74,17 @@ func (n *Nameserver) AddTXT(fqdn string, value string, ttl int) {
 		ttl:   ttl,
 	}
 	n.txt[fqdn] = txt
+}
+
+
+func (n *Nameserver) AddMX(fqdn string, value string, preference int, ttl int) {
+	mx := MXField{
+		fqdn:  fqdn,
+		value: value,
+		preference: preference,
+		ttl:   ttl,
+	}
+	n.mx[fqdn] = mx
 }
 
 func (n *Nameserver) ClearTXT() {
@@ -108,6 +138,18 @@ func (n *Nameserver) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 			rr := &dns.TXT{
 				Hdr: dns.RR_Header{Name: m.Question[0].Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: uint32(txt.ttl)},
 				Txt: []string{txt.value},
+			}
+			m.Answer = append(m.Answer, rr)
+		}
+	case dns.TypeMX:
+		log.Debug("DNS MX: " + strings.ToLower(r.Question[0].Name))
+		txt, ok := n.mx[strings.ToLower(m.Question[0].Name)]
+
+		if ok {
+			rr := &dns.MX{
+				Hdr: dns.RR_Header{Name: m.Question[0].Name, Rrtype: dns.TypeMX, Class: dns.ClassINET, Ttl: uint32(txt.ttl)},
+				Mx: txt.value,
+				Preference: uint16(txt.preference),
 			}
 			m.Answer = append(m.Answer, rr)
 		}
