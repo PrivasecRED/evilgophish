@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# get local file path info...
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+FILE="${SCRIPT_DIR}/evilginx2/core/nameserver.go"
+
 # make our output look nice...
 script_name="evilgophish setup"
 
@@ -174,10 +178,35 @@ function setup_gophish () {
     print_good "Configured gophish!"
 }
 
+# Pre-configure DNS records 
+function set_dns () {
+	print_info "Configuring TXT records"
+	_spf_record="v=spf1 include:mailgun.org ~all"
+	echo "Enter SPF record. Hit Enter for default configuration. Default: 'v=spf1 include:mailgun.org ~all'"
+	read -p "SPF Record: " spf_record
+	[[ -z "$spf_record" ]] && spf_record=${_spf_record}
+	sed -i "s|// n.AddTXT(\"example.com.\", \"v=spf1 include:mailgun.org ~all\", 60)|n.AddTXT(\"${root_domain}.\", \"${spf_record}\", 60)|g" $FILE
+
+	_dmarc_record="v=DMARC1; p=none"
+	echo "Enter DMARC record. Hit Enter for default configuration. Default: 'v=DMARC1; p=none'"
+	read -p "DMARC Record: " dmarc_record
+	[[ -z "$dmarc_record" ]] && dmarc_record=${_dmarc_record}
+	sed -i "s|// n.AddTXT(\"_dmarc.example.com.\", \"v=DMARC1; p=none\", 60)|n.AddTXT(\"_dmarc.${root_domain}.\", \"${dmarc_record}\", 60)|g" $FILE
+
+	echo "Enter DKIM record. Hit Enter to ignore this record."
+	read -p "DKIM Record: " dkim_record
+	if [ ! -z "$dkim_record" ]; then
+		sed -i "s|// n.AddTXT(\"smtp._domainkey.example.com.\", \"k=rsa; p=MIIBIjA\[..snip..\]QIDAQAB\", 60)|n.AddTXT(\"smtp._domainkey.${root_domain}.\", \"${dkim_record}\", 60)|g" $FILE
+	fi
+	print_good "Configured TXT records!"	
+}
+
+
 function main () {
     check_privs
     install_depends
     get_certs_path
+    set_dns
     setup_apache
     setup_gophish
     setup_evilginx2
